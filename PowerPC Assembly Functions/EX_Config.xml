@@ -4,7 +4,7 @@
 <codeMenuConfig>
     <!--To alter some miscellaneous properties of the menu, edit the contents of this block!-->
     <menuProperties>
-        <!--Specifies what folder on the SD Card the menu will expect to be in. Must be 8 characters long!-->
+        <!--Specifies what folder on the SD Card the menu will expect to be in. Must be fewer than 28 characters long!-->
         <!--Leave this blank to use the default folder.-->
         <buildBaseFolder name="P+EX/./." />
         <!--Specify a replacement for the text that usually sits at the top of the menu.-->

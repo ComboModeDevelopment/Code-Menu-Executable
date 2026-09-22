@@ -57,7 +57,7 @@ bool setMAIN_FOLDER(std::string mainFolderIn)
 {
 	bool result = 0;
 
-	if (mainFolderIn.size() == 0x8)
+	if (mainFolderIn.size() > 0 && mainFolderIn.size() < 28)
 	{
 		MAIN_FOLDER = mainFolderIn;
 		result = 1;
