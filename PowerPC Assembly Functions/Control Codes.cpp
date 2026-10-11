@@ -616,6 +616,133 @@ void Draw()
 	ASMEnd(0x38210030); //addi sp, sp, 48
 }
 
+// Creates a character buffer for the fighter in r3, unless one already exists (then jumps to QuitLabel).
+// Shared by the Add New Character Buffer and Delete Character Buffer on Transform hooks, which use the same register layout.
+static void CreateCharacterBufferEntry(int QuitLabel)
+{
+	int BaseModuleTableReg = 31;
+	int reg1 = 30;
+	int reg2 = 29;
+	int reg3 = 28;
+	int reg4 = 27;
+	int reg5 = 26;
+	int ModulePtrReg = 25;
+	int HeadOfFighterReg = 24;
+	int CharacterBufferReg = 23;
+	int Quit = QuitLabel;
+
+	//check if already exists
+	// Loads the Character's Base Module Table?
+	LWZ(BaseModuleTableReg, 3, 0x60);
+	// Get the ptr to the Buffer Ptr Table Address in the Header...
+	LoadWordToReg(reg1, MAIN_BUFFER_PTR);
+	// ... and load it into CharacterBufferReg. CharacterBufferReg now points to Buffer Ptr Table
+	LWZ(CharacterBufferReg, reg1, 0);
+	// Then, for as long as we're looking at a non-empty slot...
+	While(CharacterBufferReg, NOT_EQUAL_I, 0); {
+		// ... check if the entry in that slot is for the entry we'd be adding right now.
+		CMPL(CharacterBufferReg, BaseModuleTableReg, 0);
+		JumpToLabel(Quit, bCACB_EQUAL); // If it is, then we can abord adding this entry to the buffer, jump to quit.
+		// If the existing entry didn't match the entry we're about to add, move to next entry.
+		LWZU(CharacterBufferReg, reg1, 8);
+	}EndWhile();
+
+	// Backup r3 into HeadOfFighterReg for later.
+	MR(HeadOfFighterReg, 3);
+	// If we make it through that loop without finding a matching entry, then we should continue with adding our entry.
+	LWZ(ModulePtrReg, BaseModuleTableReg, 0xD8);
+
+	// Zero out reg1...
+	SetRegister(reg1, 0);
+	// ... and look for the first entry in the table that equals 0x00.
+	// Ironically, I'm pretty sure this is unnecessary since, if the entry we're about to add isn't in the table already,
+	// the above loop breaks with reg1 pointing to the first zeroed entry. Could've just zeroed reg2 instead.
+	FindEndOfCharacterBuffers(reg1, reg2);
+	// But anyway, store our BaseModuleTableReg value into the first open spot...
+	STW(BaseModuleTableReg, reg2, 0);
+	// ... and zero out the 8-byte table entry following this one.
+	STW(reg1, reg2, 8); //clear next slot
+	STW(reg1, reg2, 0xC); //clear next slot
+
+	// Next, we need to allocate our buffer and store that pointer in our table entry.
+	// So set the size to be allocated...
+	SetRegister(reg1, CHR_BUFFER_SIZE + 0x20);
+	// ... and allocate it. Note the default HeapID argument; as of writing this it's MenuInstance.
+	Allocate(reg1);
+	// Then store the address to the allocated space in the second word of our table entry, and our entry's addresses are set up!
+	STW(3, reg2, 4);
+
+	// And copy the address to that buffer into CharacterBufferReg
+	MR(CharacterBufferReg, 3);
+
+	// And pull that r3 value we backed up early back into r3 for use again.
+	MR(3, HeadOfFighterReg);
+	CallBrawlFunc(FT_GET_INPUT); //getInput
+	STW(3, CharacterBufferReg, CHR_BUFFER_FIGHTER_INPUT_PTR_OFFSET);
+	SetRegister(3, FT_MANAGER_ADDRESS);
+	CallBrawlFunc(FT_MGR_GET_PLAYER_NO); // Get Player Number
+	STW(3, CharacterBufferReg, CHR_BUFFER_PORT_OFFSET);
+
+	STW(HeadOfFighterReg, CharacterBufferReg, CHR_BUFFER_HEAD_OF_FIGHTER_OFFSET);
+
+	MULLI(reg2, 3, 0x5C);
+	SetRegister(reg1, CHARACTER_INFO_START_ADDRESS);
+	ADD(reg1, reg1, reg2);
+	STW(reg1, CharacterBufferReg, CHR_BUFFER_INFO_PTR_OFFSET);
+
+	if (CHARACTER_SELECT_P1_INDEX != -1) {
+		// Puts address of this character's Character Switcher Line into reg2
+		GetArrayValueFromIndex(CHARACTER_SWITCHER_ARRAY_LOC, 3, 0, 3, reg2); {
+			LBZ(reg1, reg1, 0); //get char ID
+			// Load Selection Source Line INDEX, in case this Switcher line is a Selection Mirror
+			LWZ(3, reg2, Selection::SELECTION_LINE_SOURCE_SELECTION_INDEX);
+			// And in the relevant line, get the address of the lower byte of the first Slot ID in the offset list...
+			ADDI(reg5, 3, Selection::SELECTION_LINE_OFFSETS_START + 3);
+			// ... then look at every 4th byte, looking for the index for the character's Slot ID, and store the index in reg3.
+			FindInArray(reg1, reg5, CHARACTER_ID_LIST.size(), 4, reg3, reg4);
+			// Then set the Switcher Line's Value and Default to this index!
+			STW(reg3, reg2, Line::VALUE);
+			STW(reg3, reg2, Line::DEFAULT);
+		}EndIf(); EndIf();
+	}
+
+	MR(3, BaseModuleTableReg);
+	SetRegs(4, { 3023, 0 }); //gravity
+	CallBrawlFunc(0x80796c6c); //get constant float core
+	FNEG(1, 1);
+	STFS(1, CharacterBufferReg, CHR_BUFFER_GRAVITY_OFFSET);
+
+	MR(3, BaseModuleTableReg);
+	SetRegs(4, { 3024, 0 }); //mfs
+	CallBrawlFunc(0x80796c6c); //get constant float core
+	FNEG(1, 1);
+	STFS(1, CharacterBufferReg, CHR_BUFFER_MFS_OFFSET);
+
+	LWZ(reg2, ModulePtrReg, 0x64);
+	LWZ(reg2, reg2, 0x20);
+	LWZ(reg2, reg2, 0xC);
+	STW(reg2, CharacterBufferReg, CHR_BUFFER_VARIABLES_ADDRESS_OFFSET); //variables start address
+	LWZU(reg3, reg2, 0xE0);
+	STW(reg3, CharacterBufferReg, CHR_BUFFER_HITSTUN_FRAMES_OFFSET); //frames
+	STW(reg2, CharacterBufferReg, CHR_BUFFER_HITSTUN_FRAMES_PTR_OFFSET); //ptr
+
+	LWZ(reg2, ModulePtrReg, 0xC);
+	STW(reg2, CharacterBufferReg, CHR_BUFFER_POS_PTR_OFFSET);
+
+	LWZ(reg3, ModulePtrReg, 0x7C);
+	LWZ(reg2, reg3, 0x7C);
+	STW(reg2, CharacterBufferReg, CHR_BUFFER_KB_VECTOR_PTR_OFFSET);
+
+	LWZ(reg2, ModulePtrReg, 0x5C);
+	LWZ(reg2, reg2, 0x14C);
+	STW(reg2, CharacterBufferReg, CHR_BUFFER_IP_SWITCH_PTR_OFFSET);
+
+	//create buffers
+	if (DI_DRAW_INDEX != -1) {
+		CreateDIBuffer(CharacterBufferReg, reg2, reg3, reg4);
+	}
+}
+
 void DeleteCharacterBufferOnTransform()
 {
 	//r3 is thing
@@ -680,6 +807,18 @@ void DeleteCharacterBufferOnTransform()
 
 	Label(Quit);
 
+	//add buffer for new fighter, since Add New Character Buffer only runs in startGame
+	int AddQuit = GetNextLabel();
+	LoadWordToReg(reg1, IS_IN_GAME_FLAG);
+	If(reg1, EQUAL_I, 1); {
+		LWZ(reg1, BaseModuleTableReg, 0xD8);
+		If(reg1, NOT_EQUAL_I, 0); {
+			MR(3, HeadOfFighterReg);
+			CreateCharacterBufferEntry(AddQuit);
+		}EndIf();
+	}EndIf();
+	Label(AddQuit);
+
 	RestoreRegisters();
 	ASMEnd(0x9883000b); //stb r4, r3, 0xB
 }
@@ -718,116 +857,7 @@ void AddNewCharacterBuffer()
 		int Start = GetNextLabel();
 		Label(Start);
 
-		//check if already exists
-		// Loads the Character's Base Module Table?
-		LWZ(BaseModuleTableReg, 3, 0x60);
-		// Get the ptr to the Buffer Ptr Table Address in the Header...
-		LoadWordToReg(reg1, MAIN_BUFFER_PTR);
-		// ... and load it into CharacterBufferReg. CharacterBufferReg now points to Buffer Ptr Table
-		LWZ(CharacterBufferReg, reg1, 0);
-		// Then, for as long as we're looking at a non-empty slot...
-		While(CharacterBufferReg, NOT_EQUAL_I, 0); {
-			// ... check if the entry in that slot is for the entry we'd be adding right now.
-			CMPL(CharacterBufferReg, BaseModuleTableReg, 0);
-			JumpToLabel(Quit, bCACB_EQUAL); // If it is, then we can abord adding this entry to the buffer, jump to quit.
-			// If the existing entry didn't match the entry we're about to add, move to next entry.
-			LWZU(CharacterBufferReg, reg1, 8);
-		}EndWhile();
-
-		// Backup r3 into HeadOfFighterReg for later.
-		MR(HeadOfFighterReg, 3);
-		// If we make it through that loop without finding a matching entry, then we should continue with adding our entry.
-		LWZ(ModulePtrReg, BaseModuleTableReg, 0xD8);
-
-		// Zero out reg1...
-		SetRegister(reg1, 0);
-		// ... and look for the first entry in the table that equals 0x00.
-		// Ironically, I'm pretty sure this is unnecessary since, if the entry we're about to add isn't in the table already,
-		// the above loop breaks with reg1 pointing to the first zeroed entry. Could've just zeroed reg2 instead.
-		FindEndOfCharacterBuffers(reg1, reg2);
-		// But anyway, store our BaseModuleTableReg value into the first open spot...
-		STW(BaseModuleTableReg, reg2, 0);
-		// ... and zero out the 8-byte table entry following this one.
-		STW(reg1, reg2, 8); //clear next slot
-		STW(reg1, reg2, 0xC); //clear next slot
-
-		// Next, we need to allocate our buffer and store that pointer in our table entry.
-		// So set the size to be allocated...
-		SetRegister(reg1, CHR_BUFFER_SIZE + 0x20);
-		// ... and allocate it. Note the default HeapID argument; as of writing this it's MenuInstance.
-		Allocate(reg1);
-		// Then store the address to the allocated space in the second word of our table entry, and our entry's addresses are set up!
-		STW(3, reg2, 4);
-
-		// And copy the address to that buffer into CharacterBufferReg
-		MR(CharacterBufferReg, 3);
-
-		// And pull that r3 value we backed up early back into r3 for use again.
-		MR(3, HeadOfFighterReg);
-		CallBrawlFunc(FT_GET_INPUT); //getInput
-		STW(3, CharacterBufferReg, CHR_BUFFER_FIGHTER_INPUT_PTR_OFFSET);
-		SetRegister(3, FT_MANAGER_ADDRESS);
-		CallBrawlFunc(FT_MGR_GET_PLAYER_NO); // Get Player Number
-		STW(3, CharacterBufferReg, CHR_BUFFER_PORT_OFFSET);
-
-		STW(HeadOfFighterReg, CharacterBufferReg, CHR_BUFFER_HEAD_OF_FIGHTER_OFFSET);
-
-		MULLI(reg2, 3, 0x5C);
-		SetRegister(reg1, CHARACTER_INFO_START_ADDRESS);
-		ADD(reg1, reg1, reg2);
-		STW(reg1, CharacterBufferReg, CHR_BUFFER_INFO_PTR_OFFSET);
-
-		if (CHARACTER_SELECT_P1_INDEX != -1) {
-			// Puts address of this character's Character Switcher Line into reg2
-			GetArrayValueFromIndex(CHARACTER_SWITCHER_ARRAY_LOC, 3, 0, 3, reg2); {
-				LBZ(reg1, reg1, 0); //get char ID
-				// Load Selection Source Line INDEX, in case this Switcher line is a Selection Mirror
-				LWZ(3, reg2, Selection::SELECTION_LINE_SOURCE_SELECTION_INDEX);
-				// And in the relevant line, get the address of the lower byte of the first Slot ID in the offset list...
-				ADDI(reg5, 3, Selection::SELECTION_LINE_OFFSETS_START + 3);
-				// ... then look at every 4th byte, looking for the index for the character's Slot ID, and store the index in reg3.
-				FindInArray(reg1, reg5, CHARACTER_ID_LIST.size(), 4, reg3, reg4);
-				// Then set the Switcher Line's Value and Default to this index!
-				STW(reg3, reg2, Line::VALUE);
-				STW(reg3, reg2, Line::DEFAULT);
-			}EndIf(); EndIf();
-		}
-
-		MR(3, BaseModuleTableReg);
-		SetRegs(4, { 3023, 0 }); //gravity
-		CallBrawlFunc(0x80796c6c); //get constant float core
-		FNEG(1, 1);
-		STFS(1, CharacterBufferReg, CHR_BUFFER_GRAVITY_OFFSET);
-
-		MR(3, BaseModuleTableReg);
-		SetRegs(4, { 3024, 0 }); //mfs
-		CallBrawlFunc(0x80796c6c); //get constant float core
-		FNEG(1, 1);
-		STFS(1, CharacterBufferReg, CHR_BUFFER_MFS_OFFSET);
-
-		LWZ(reg2, ModulePtrReg, 0x64);
-		LWZ(reg2, reg2, 0x20);
-		LWZ(reg2, reg2, 0xC);
-		STW(reg2, CharacterBufferReg, CHR_BUFFER_VARIABLES_ADDRESS_OFFSET); //variables start address
-		LWZU(reg3, reg2, 0xE0);
-		STW(reg3, CharacterBufferReg, CHR_BUFFER_HITSTUN_FRAMES_OFFSET); //frames
-		STW(reg2, CharacterBufferReg, CHR_BUFFER_HITSTUN_FRAMES_PTR_OFFSET); //ptr
-
-		LWZ(reg2, ModulePtrReg, 0xC);
-		STW(reg2, CharacterBufferReg, CHR_BUFFER_POS_PTR_OFFSET);
-
-		LWZ(reg3, ModulePtrReg, 0x7C);
-		LWZ(reg2, reg3, 0x7C);
-		STW(reg2, CharacterBufferReg, CHR_BUFFER_KB_VECTOR_PTR_OFFSET);
-
-		LWZ(reg2, ModulePtrReg, 0x5C);
-		LWZ(reg2, reg2, 0x14C);
-		STW(reg2, CharacterBufferReg, CHR_BUFFER_IP_SWITCH_PTR_OFFSET);
-
-		//create buffers
-		if (DI_DRAW_INDEX != -1) {
-			CreateDIBuffer(CharacterBufferReg, reg2, reg3, reg4);
-		}
+		CreateCharacterBufferEntry(Quit);
 
 		LWZ(reg1, EntityReg, 0x5C);
 		If(reg1, EQUAL, IsPopoReg); {

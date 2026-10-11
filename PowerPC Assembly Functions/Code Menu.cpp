@@ -116,7 +116,7 @@ void buildCharacterIDLists()
 	{
 		characterNameToIDMap.emplace("Bowser", LCSI_BOWSER);
 		characterNameToIDMap.emplace("Captain Falcon", LCSI_CAPTAIN_FALCON);
-		characterNameToIDMap.emplace("Charizard", LCSI_CHARIZARD);
+		characterNameToIDMap.emplace("Charizard", LCSI_POKETRAINER_CHARIZARD);
 		characterNameToIDMap.emplace("Dedede", LCSI_DEDEDE);
 		characterNameToIDMap.emplace("Diddy Kong", LCSI_DIDDY_KONG);
 		characterNameToIDMap.emplace("Donkey Kong", LCSI_DONKEY_KONG);
@@ -125,7 +125,7 @@ void buildCharacterIDLists()
 		characterNameToIDMap.emplace("Ganondorf", LCSI_GANONDORF);
 		characterNameToIDMap.emplace("Ice Climbers", LCSI_ICE_CLIMBERS);
 		characterNameToIDMap.emplace("Ike", LCSI_IKE);
-		characterNameToIDMap.emplace("Ivysaur", LCSI_IVYSAUR);
+		characterNameToIDMap.emplace("Ivysaur", LCSI_POKETRAINER_IVYSAUR);
 		characterNameToIDMap.emplace("Jigglypuff", LCSI_JIGGLYPUFF);
 		characterNameToIDMap.emplace("Kirby", LCSI_KIRBY);
 		characterNameToIDMap.emplace("Link", LCSI_LINK);
@@ -146,7 +146,7 @@ void buildCharacterIDLists()
 		characterNameToIDMap.emplace("Sheik", LCSI_SHEIK);
 		characterNameToIDMap.emplace("Snake", LCSI_SNAKE);
 		characterNameToIDMap.emplace("Sonic", LCSI_SONIC);
-		characterNameToIDMap.emplace("Squirtle", LCSI_SQUIRTLE);
+		characterNameToIDMap.emplace("Squirtle", LCSI_POKETRAINER_SQUIRTLE);
 		characterNameToIDMap.emplace("Toon Link", LCSI_TOON_LINK);
 		characterNameToIDMap.emplace("Wario", LCSI_WARIO);
 		characterNameToIDMap.emplace("Wolf", LCSI_WOLF);

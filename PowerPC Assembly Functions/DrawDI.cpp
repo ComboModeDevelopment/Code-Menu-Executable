@@ -3,6 +3,66 @@
 
 #define FP_REGISTERS int FPReg1 = 0, FPReg2 = 2, FPReg3 = 3, FPReg4 = 4, PX = 5, PY = 6, G = 7, FS = 8, MFS = 9, VX = 10, VY = 11, XA = 12, YA = 13, StaticFP1 = 14, StaticFP2 = 15, StaticFP3 = 16, TopBound = 17, LowBound = 18, LeftBound = 19, RightBound = 20;
 
+// Re-reads the knockback vector ptr from the fighter and stores it back into the character buffer.
+// The value cached when the buffer was created can be null (e.g. vanilla Pokemon Trainer after a stock loss).
+// Gets it the same way correctDamageVector does: kineticModule->getEnergy(4) (vtable + 0x20).
+// ResultReg is 0 if the ptr couldn't be found; BaseModuleTableReg and ResultReg may be the same register.
+// Clobbers r3, r4, r12 and CTR.
+static void RefreshKBVectorPtr(int BaseModuleTableReg, int CharacterBufferReg, int ResultReg)
+{
+	LWZ(ResultReg, BaseModuleTableReg, 0xD8); //module enumeration
+	If(ResultReg, NOT_EQUAL_I, 0); {
+		LWZ(3, ResultReg, 0x7C); //kinetic module
+		SetRegister(ResultReg, 0);
+		If(3, NOT_EQUAL_I, 0); {
+			SetRegister(4, 4);
+			LWZ(12, 3, 0);
+			LWZ(12, 12, 0x20);
+			MTCTR(12);
+			BCTRL(); //getEnergy(4)
+			MR(ResultReg, 3); //kb vector
+		}EndIf();
+	}EndIf();
+	STW(ResultReg, CharacterBufferReg, CHR_BUFFER_KB_VECTOR_PTR_OFFSET);
+}
+
+// Re-reads the module-derived ptrs cached in the character buffer when it was created.
+// They can be stale if the fighter instance was rebuilt (e.g. vanilla Pokemon Trainer after a stock loss).
+static void RefreshCharacterBufferPtrs(int BaseModuleTableReg, int CharacterBufferReg, int reg1, int reg2)
+{
+	LWZ(reg1, BaseModuleTableReg, 0xD8); //module enumeration
+	If(reg1, NOT_EQUAL_I, 0); {
+		LWZ(reg2, reg1, 0x64);
+		LWZ(reg2, reg2, 0x20);
+		LWZ(reg2, reg2, 0xC);
+		STW(reg2, CharacterBufferReg, CHR_BUFFER_VARIABLES_ADDRESS_OFFSET);
+		ADDI(reg2, reg2, 0xE0);
+		STW(reg2, CharacterBufferReg, CHR_BUFFER_HITSTUN_FRAMES_PTR_OFFSET);
+
+		LWZ(reg2, reg1, 0xC);
+		STW(reg2, CharacterBufferReg, CHR_BUFFER_POS_PTR_OFFSET);
+
+		LWZ(reg2, reg1, 0x5C);
+		LWZ(reg2, reg2, 0x14C);
+		STW(reg2, CharacterBufferReg, CHR_BUFFER_IP_SWITCH_PTR_OFFSET);
+
+		// Gravity and max fall speed are also cached at creation, and read as 0 if the fighter wasn't ready yet
+		MR(3, BaseModuleTableReg);
+		SetRegister(4, 3023); //gravity
+		SetRegister(5, 0);
+		CallBrawlFunc(0x80796c6c); //get constant float core
+		FNEG(1, 1);
+		STFS(1, CharacterBufferReg, CHR_BUFFER_GRAVITY_OFFSET);
+
+		MR(3, BaseModuleTableReg);
+		SetRegister(4, 3024); //mfs
+		SetRegister(5, 0);
+		CallBrawlFunc(0x80796c6c); //get constant float core
+		FNEG(1, 1);
+		STFS(1, CharacterBufferReg, CHR_BUFFER_MFS_OFFSET);
+	}EndIf();
+}
+
 void DrawDI()
 {
 	SetHitStart();
@@ -79,20 +139,23 @@ void DrawTrajectories()
 						LFS(StaticFP2, reg6, 0xC); //stickY
 						STFS(XA, reg6, 8);
 						STFS(YA, reg6, 0xC);
-						LWZ(reg1, CharacterBufferReg, CHR_BUFFER_KB_VECTOR_PTR_OFFSET);
-						LWZ(reg5, CharacterBufferReg, CHR_BUFFER_XVEL_OFFSET);
-						LWZ(reg3, reg1, 8); //save xvel
-						STW(reg5, reg1, 8);
-						LWZ(reg5, CharacterBufferReg, CHR_BUFFER_YVEL_OFFSET);
-						LWZ(reg4, reg1, 0xC); //save yvel
-						STW(reg5, reg1, 0xC);
-						SetRegister(3, 0x80b897bc);
-						LWZ(4, MainBufferReg, -4);
-						SetRegister(SignalReg, 0xC0DE);
-						CallBrawlFunc(0x808778d8); //correctDamageVector
-						//restore
-						STW(reg3, reg1, 8);
-						STW(reg4, reg1, 0xC);
+						LWZ(reg1, MainBufferReg, -4);
+						RefreshKBVectorPtr(reg1, CharacterBufferReg, reg1);
+						If(reg1, NOT_EQUAL_I, 0); {
+							LWZ(reg5, CharacterBufferReg, CHR_BUFFER_XVEL_OFFSET);
+							LWZ(reg3, reg1, 8); //save xvel
+							STW(reg5, reg1, 8);
+							LWZ(reg5, CharacterBufferReg, CHR_BUFFER_YVEL_OFFSET);
+							LWZ(reg4, reg1, 0xC); //save yvel
+							STW(reg5, reg1, 0xC);
+							SetRegister(3, 0x80b897bc);
+							LWZ(4, MainBufferReg, -4);
+							SetRegister(SignalReg, 0xC0DE);
+							CallBrawlFunc(0x808778d8); //correctDamageVector
+							//restore
+							STW(reg3, reg1, 8);
+							STW(reg4, reg1, 0xC);
+						}EndIf();
 						STFS(StaticFP1, reg6, 8);
 						STFS(StaticFP2, reg6, 0xC);
 					}EndIf();
@@ -135,6 +198,8 @@ void SetHitStart()
 
 	FindCharacterBuffer(30, CharacterBufferReg);
 	If(CharacterBufferReg, NOT_EQUAL_I, 0); {
+		RefreshCharacterBufferPtrs(30, CharacterBufferReg, reg1, reg2);
+
 		LWZ(reg1, CharacterBufferReg, CHR_BUFFER_HITSTUN_FRAMES_PTR_OFFSET);
 		LWZ(reg1, reg1, 0);
 		STW(reg1, CharacterBufferReg, CHR_BUFFER_HITSTUN_FRAMES_OFFSET);
@@ -254,6 +319,8 @@ void SetTrajectoryBuffers()
 
 	FindCharacterBuffer(29, CharacterBufferReg);
 	If(CharacterBufferReg, NOT_EQUAL_I, 0); {
+	RefreshKBVectorPtr(29, CharacterBufferReg, reg1);
+	If(reg1, NOT_EQUAL_I, 0); {
 
 		LoadByteToReg(reg3, IS_DEBUG_PAUSED + 3);
 
@@ -292,6 +359,7 @@ void SetTrajectoryBuffers()
 			}EndIf();
 		}CounterLoopEnd();
 
+	} EndIf();
 	} EndIf();
 
 	RestoreRegisters();

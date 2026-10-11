@@ -1938,7 +1938,7 @@ namespace xml
 	void addon::writeEmbedsToMenuFileAndBank(std::ostream& menuFile, std::ostream& aliasBankOutput)
 	{
 		// Initialize the address value we'll be iterating as we establish new INDEX values!
-		std::size_t currAddr = std::size_t(START_OF_CODE_MENU_HEADER) + menuFile.tellp();
+		std::size_t currAddr = std::size_t(u32(START_OF_CODE_MENU_HEADER)) + menuFile.tellp();
 
 		// Label the beginning of its aliases in the bank...
 		aliasBankOutput << "# Addon \"" << addonName << "\" Lines\n";
@@ -2019,13 +2019,13 @@ namespace xml
 					if (workingMemorySize > 0x00)
 					{
 						// ... write its baseLOC to the file to denote its position.
-						lava::writeRawDataToStream(outputFile, baseLOC);
+						lava::writeRawDataToStream(outputFile, u32(baseLOC));
 					}
 					// Otherwise...
 					else
 					{
 						// ... write 0xFFFFFFFF instead to denote that it isn't present.
-						lava::writeRawDataToStream(outputFile, SIZE_MAX);
+						lava::writeRawDataToStream(outputFile, u32(0xFFFFFFFF));
 					}
 
 					// We want the line in the output to be ordered irrespective of page, so create a temporary map.
@@ -2108,7 +2108,7 @@ namespace xml
 	void generateAddonEmbeds(std::ostream& outputStream)
 	{
 		// Initialize the address value we'll be iterating as we establish new INDEX values!
-		std::size_t currAddr = std::size_t(START_OF_CODE_MENU_HEADER) + outputStream.tellp();
+		std::size_t currAddr = std::size_t(u32(START_OF_CODE_MENU_HEADER)) + outputStream.tellp();
 
 		// If an Addons Output folder already exists, delete it to ensure no stale content from the older folder ends up in the new one.
 		// Also ensures that if no addons were defined in this run of the builder that there simply *is* no Addons folder.
